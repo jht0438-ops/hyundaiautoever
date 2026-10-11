@@ -1,111 +1,64 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-
-st.set_page_config(page_title='Global ERP Internal Control Analyzer',page_icon='🛡️',layout='wide')
-st.markdown('''<style>.block-container{padding-top:2rem}.small-note{color:#667085;font-size:.88rem}.stMetric{background:#f6f8fb;padding:12px;border-radius:10px}</style>''',unsafe_allow_html=True)
-st.title('🛡️ Global ERP Internal Control Analyzer')
-st.caption('현대오토에버 지원 직무 연구용 | 글로벌 ERP 환경의 내부회계 통제 점검 시뮬레이터')
-st.warning('본 프로그램은 지원자가 학습 목적으로 개발한 가상 시뮬레이터입니다. 현대오토에버 또는 고객사의 실제 ERP 데이터, 통제 설계·운영 상태, 감사 결과를 평가하지 않습니다.')
-
-SAMPLE=[
- ('TX001','한국','매입','V101','2026-06-01',12000000,12000000,'승인','있음','U01','U02'),
- ('TX002','미주','매입','V102','2026-06-02',8800000,8800000,'미승인','있음','U03','U04'),
- ('TX003','유럽','매입','V103','2026-06-03',5500000,5500000,'승인','없음','U05','U06'),
- ('TX004','아태','매입','V104','2026-06-04',7200000,6900000,'승인','있음','U07','U08'),
- ('TX005','한국','매입','V105','2026-06-05',15000000,15000000,'승인','있음','U09','U09'),
- ('TX006','미주','매입','V106','2026-06-06',4400000,4400000,'승인','있음','U10','U11'),
- ('TX007','미주','매입','V106','2026-06-06',4400000,4400000,'승인','있음','U10','U11'),
- ('TX008','유럽','매입','V107','2026-06-07',9800000,9800000,'승인','있음','U12','U13'),
- ('TX009','아태','매입','V108','2026-06-08',6000000,6000000,'미승인','없음','U14','U14'),
- ('TX010','한국','매입','V109','2026-06-09',3100000,3100000,'승인','있음','U15','U16'),
-]
-COLS=['거래ID','지역','거래유형','거래처코드','거래일','ERP기록금액','증빙금액','승인상태','증빙유무','입력자','승인자']
-
-def assess(df, checks):
-    d=df.copy()
-    d['승인누락']= (d['승인상태']!='승인') if checks['approval'] else False
-    d['증빙누락']= (d['증빙유무']!='있음') if checks['evidence'] else False
-    d['금액불일치']= (d['ERP기록금액']!=d['증빙금액']) if checks['amount'] else False
-    d['직무분리위반']= (d['입력자']==d['승인자']) if checks['sod'] else False
-    keys=['지역','거래유형','거래처코드','거래일','ERP기록금액']
-    d['중복의심']=d.duplicated(subset=keys,keep=False) if checks['duplicate'] else False
-    flags=['승인누락','증빙누락','금액불일치','직무분리위반','중복의심']
-    d['탐지항목수']=d[flags].sum(axis=1)
-    d['점검결과']=d['탐지항목수'].map(lambda x:'추가 점검 필요' if x else '설정 규칙상 특이사항 없음')
-    d['점검사유']=d.apply(lambda r:', '.join(k for k in flags if r[k]) or '없음',axis=1)
-    return d,flags
-
-DEFAULT={'approval':True,'evidence':True,'amount':True,'sod':True,'duplicate':True}
-if 'data' not in st.session_state: st.session_state.data=pd.DataFrame(SAMPLE,columns=COLS)
-if 'checks' not in st.session_state: st.session_state.checks=DEFAULT.copy()
-
-t1,t2,t3,t4,t5=st.tabs(['① 개발 배경·사용법','② 거래 프로세스·데이터','③ 내부통제 점검','④ 통제 개선 시뮬레이션','⑤ 평가 요약·다운로드'])
+st.set_page_config(page_title='현대오토에버 사업별 내부회계 분석',page_icon='🛡️',layout='wide')
+st.title('🛡️ 현대오토에버 사업별 내부회계 통제 시뮬레이터')
+st.caption('SI · ITO · 차량 SW | 공시 기반 사업 분석 + 가상 통제 운영평가')
+st.warning('교육·자기소개서 연구용입니다. 실제 현대오토에버 내부회계 미비점이나 회계오류를 평가하지 않습니다. 통제 데이터는 전부 가상입니다.')
+segments={'SI':{'description':'기업 정보시스템의 설계·구축, ERP·스마트팩토리·클라우드 프로젝트','risk':'계약 변경, 검수 및 매출 인식 근거, 추정원가 변경의 승인','controls':['계약 변경 승인','매출 인식 근거 검토','원가 추정 변경 승인','매출액 산정 재계산'],'evidence':'계약서, 변경승인, 검수 문서, 원가 산정표'},'ITO':{'description':'고객 전산시스템 운영·관리·유지보수','risk':'서비스 제공 기간, 청구 누락, 계약 단가 불일치','controls':['서비스 수행기록 대사','청구 금액·단가 검증','계약 변경 승인','청구 누락 검토'],'evidence':'운영기록, 계약서, 청구 명세서'},'차량 SW':{'description':'AUTOSAR 기반 mobilgene 플랫폼, 내비게이션 SW 공급','risk':'계약상 납품·검수 조건 및 개발지출 회계처리','controls':['납품·검수 근거 확인','계약별 수익 인식 조건 검토','개발지출 분류 검토','회계처리 승인'],'evidence':'SW 계약서, 납품·검수 문서, 개발비 지출내역'}}
+sales=pd.DataFrame([['2024 연간',16303.88751,12788.69352,8043.59174],['2025 연간',17671.73268,16571.92189,8277.01804],['2025 상반기',7650.48161,6874.42598,4225.71499],['2026 상반기',9088.07340,8674.01625,4102.38098]],columns=['기간','ITO','SI','차량 SW'])
+rows=[]
+for biz,d in segments.items():
+ for i,c in enumerate(d['controls']):
+  rows.append([f'{biz}-{i+1:02d}',biz,c,True,i%3!=1,'완료','미완료' if i==2 else '완료'])
+if 'review' not in st.session_state:st.session_state.review=pd.DataFrame(rows,columns=['점검ID','사업','통제활동','수행여부','증빙확보','기대결과','실제기록'])
+def evaluate(df):
+ d=df.copy();d['수행누락']=~d['수행여부'].fillna(False).astype(bool);d['증빙누락']=~d['증빙확보'].fillna(False).astype(bool);d['기록불일치']=d['기대결과'].astype(str)!=d['실제기록'].astype(str)
+ d['점검사유']=d.apply(lambda r:', '.join(k for k in ['수행누락','증빙누락','기록불일치'] if r[k]) or '입력자료상 특이사항 없음',axis=1)
+ d['추가확인']=d[['수행누락','증빙누락','기록불일치']].any(axis=1)
+ return d
+t1,t2,t3,t4,t5=st.tabs(['① 사업구조 분석','② 사업별 리스크·통제','③ 운영평가 시뮬레이션','④ 개선 시나리오','⑤ 평가 요약·지원동기'])
 with t1:
-    st.header('왜 이 프로그램을 만들었나요?')
-    st.write('현대오토에버는 현대차그룹의 글로벌 차세대 ERP 구축·확산 사업을 수행합니다. ERP는 구매·승인·증빙·회계기록 등 업무 프로세스를 연결하므로, 거래가 회계정보로 기록되는 과정에서 발생 가능한 위험을 이해하는 데 좋은 연구 사례입니다.')
-    st.info('**핵심 구분:** 현대오토에버가 고객사를 위해 수행하는 ERP 구축 사업과 현대오토에버 자체의 연결 내부회계관리제도는 서로 다른 대상입니다. 이 프로그램은 고객사나 현대오토에버의 실제 통제 효과성을 판단하지 않습니다.')
-    st.subheader('어떻게 분석하나요?')
-    st.markdown('**①** 가상 거래 10건을 확인합니다.  **②** 승인·증빙·금액·직무분리·중복 여부를 규칙으로 점검합니다.  **③** 통제 규칙을 변경해 탐지 결과의 차이를 비교합니다.  **④** 점검 결과를 CSV로 내려받습니다.')
-    st.subheader('무엇을 배울 수 있나요?')
-    st.write('동일한 거래라도 어떤 통제활동을 적용하는지에 따라 탐지되는 위험 징후가 달라집니다. 따라서 내부회계관리에서는 수치의 결과뿐 아니라 거래의 승인, 증빙, 기록 및 사후 검토 과정이 중요합니다. 탐지된 징후는 오류나 통제 미비점의 확정 판정이 아니며 원인 확인과 추가 증빙 검토가 필요합니다.')
-    st.subheader('공시와 시뮬레이션의 구분')
-    st.markdown('- **공시에서 확인할 사항:** 현대차 차세대 ERP 본사·미주 및 아태·유럽 확산 프로젝트, 해외 연결대상 종속기업, 내부회계관리제도 감사 의견\n- **가상 가정:** 아래 거래 10건, 통제 규칙, 점검 결과 및 개선 시나리오\n- **분석 한계:** 실제 RCM, ERP 로그, 접근권한 정책, 계약서, 회계전표, 감사증거를 확보하지 않았으므로 실효성 평가 불가')
-    st.caption('참고자료: 현대오토에버 2025년 사업보고서 및 2026년 반기보고서. 공시 수치는 프로그램 내 거래자료와 혼용하지 않습니다.')
+ st.header('왜 현대오토에버인가?')
+ st.write('현대오토에버는 **시스템 구축(SI), 운영·유지보수(ITO), 차량 SW**를 함께 영위합니다. 서로 다른 사업의 계약·회계 프로세스를 이해하고 사업별로 적합한 통제를 설계하는 문제의식에서 출발했습니다.')
+ period=st.selectbox('공시 매출 비교 기간',sales['기간'],index=3)
+ a=sales[sales['기간']==period].iloc[0];chart=pd.DataFrame({'사업':['ITO','SI','차량 SW'],'매출액(억원)':[a['ITO'],a['SI'],a['차량 SW']]})
+ st.bar_chart(chart.set_index('사업'));st.dataframe(chart.round(1),hide_index=True,use_container_width=True)
+ prev=sales[sales['기간']=='2025 상반기'].iloc[0];cur=sales[sales['기간']=='2026 상반기'].iloc[0]
+ for col,biz in zip(st.columns(3),['SI','ITO','차량 SW']):col.metric(f'{biz} 전년동기 매출증감',f'{(cur[biz]/prev[biz]-1)*100:+.1f}%')
+ st.caption('출처: 현대오토에버 2026.08.14 반기보고서 Ⅱ. 사업의 내용, 주요 제품 및 서비스. 매출액은 연결기준 공시 천원 단위를 억원으로 환산. 매출 증가가 통제 위험 증가를 의미하지는 않습니다.')
 with t2:
-    st.header('거래에서 회계정보까지')
-    st.markdown('**거래 발생 → 담당자 입력 → 권한 있는 담당자 승인 → 증빙 확인 → ERP 회계기록 → 사후 대사·모니터링**')
-    st.write('아래 데이터는 모두 가상입니다. 편집하면 나머지 탭에 자동 반영됩니다.')
-    df=st.data_editor(st.session_state.data,num_rows='dynamic',use_container_width=True,hide_index=True,key='editor')
-    st.session_state.data=df.copy()
-    st.download_button('가상 거래 원본 CSV 다운로드',data=df.to_csv(index=False).encode('utf-8-sig'),file_name='sample_erp_transactions.csv',mime='text/csv')
-    st.caption('거래ID는 고유 식별자입니다. 중복의심은 거래ID가 아니라 지역·유형·거래처·일자·금액의 조합으로 판단합니다.')
+ biz=st.selectbox('사업 선택',list(segments));d=segments[biz]
+ st.subheader('사업별 위험-통제 매핑(RCM 기초)')
+ st.write('**사업 특성:**',d['description']);st.write('**잠재 점검 영역:**',d['risk'])
+ for i,c in enumerate(d['controls'],1):st.write(f'{i}. {c}')
+ st.write('**증빙 예시:**',d['evidence'])
+ st.info('잠재 위험과 통제활동은 일반적인 회계·내부통제 원리에 따른 교육용 가정이며 실제 현대오토에버 RCM을 확인한 결과가 아닙니다.')
 with t3:
-    st.header('통제활동별 점검')
-    st.write('점검 항목을 선택하고 아래 결과를 확인하세요. 비활성화된 항목은 탐지하지 않습니다.')
-    a,b,c=st.columns(3)
-    with a:
-        st.session_state.checks['approval']=st.checkbox('승인 누락 탐지',value=st.session_state.checks['approval'])
-        st.session_state.checks['evidence']=st.checkbox('증빙 누락 탐지',value=st.session_state.checks['evidence'])
-    with b:
-        st.session_state.checks['amount']=st.checkbox('ERP·증빙 금액 불일치 탐지',value=st.session_state.checks['amount'])
-        st.session_state.checks['sod']=st.checkbox('입력자·승인자 동일 탐지',value=st.session_state.checks['sod'])
-    with c: st.session_state.checks['duplicate']=st.checkbox('중복 거래 의심 탐지',value=st.session_state.checks['duplicate'])
-    result,flags=assess(st.session_state.data,st.session_state.checks)
-    n=int((result['탐지항목수']>0).sum())
-    x,y,z=st.columns(3)
-    x.metric('전체 거래',len(result));y.metric('추가 점검 대상',n);z.metric('탐지 항목 합계',int(result['탐지항목수'].sum()))
-    st.dataframe(result[['거래ID','지역','ERP기록금액','점검결과','점검사유']],hide_index=True,use_container_width=True)
-    st.bar_chart(result[flags].sum().rename({'승인누락':'승인 누락','증빙누락':'증빙 누락','금액불일치':'금액 불일치','직무분리위반':'직무분리','중복의심':'중복 의심'}))
-    st.caption('동일 거래에 여러 징후가 중복 탐지될 수 있습니다. 탐지 건수는 확정 오류 건수가 아닙니다.')
+ st.subheader('사업별 가상 통제 점검표')
+ st.write('가상 통제 12개를 직접 편집하고 통제 수행, 증빙, 기대 결과와 실제 기록의 차이를 확인합니다.')
+ edited=st.data_editor(st.session_state.review,num_rows='dynamic',hide_index=True,use_container_width=True,key='edit');st.session_state.review=edited.copy()
+ result=evaluate(edited);c1,c2=st.columns(2);c1.metric('점검 항목 수',len(result));c2.metric('추가 확인 항목 수',int(result['추가확인'].sum()))
+ st.dataframe(result[['점검ID','사업','통제활동','점검사유']],hide_index=True,use_container_width=True)
+ st.caption('점검 사유는 추가 확인을 위한 신호이지 실제 통제 미비점 확정 판정이 아닙니다.')
 with t4:
-    st.header('통제 규칙 적용 전후 비교')
-    st.write('비교 기준은 ① 승인·증빙만 점검하는 기본 시나리오, ② 다섯 가지 점검을 모두 적용하는 확대 시나리오입니다.')
-    base,_=assess(st.session_state.data,{'approval':True,'evidence':True,'amount':False,'sod':False,'duplicate':False})
-    enhanced,flags=assess(st.session_state.data,DEFAULT)
-    v1=int((base['탐지항목수']>0).sum());v2=int((enhanced['탐지항목수']>0).sum())
-    c1,c2,c3=st.columns(3)
-    c1.metric('기본 규칙 탐지 거래',v1)
-    c2.metric('확대 규칙 탐지 거래',v2)
-    c3.metric('추가로 발견한 점검 대상',v2-v1)
-    comparison=pd.DataFrame({'기본 규칙':base[flags].sum(),'확대 규칙':enhanced[flags].sum()})
-    st.bar_chart(comparison)
-    st.info('탐지 항목이 증가한 것은 점검 범위가 넓어졌다는 의미이지, 통제 품질이 향상되었거나 실제 오류가 감소했다는 증거는 아닙니다. 개선 효과는 실제 운영 증빙과 사후 재점검으로 검증해야 합니다.')
-    st.subheader('권장 통제 설계 예시')
-    st.dataframe(pd.DataFrame([
-      ['승인 누락','전표 확정 전 승인 상태 확인','승인 로그 및 권한자 목록'],
-      ['증빙 누락','증빙 첨부 필수 및 누락 예외 검토','전자증빙·예외 승인 기록'],
-      ['금액 불일치','ERP 금액과 원천증빙 자동 대사','대사 내역 및 차이 조정 승인'],
-      ['직무분리','입력·승인 권한 분리 및 예외 승인','권한 매트릭스·변경 로그'],
-      ['중복 의심','거래처·일자·금액 조합 중복 경고','중복 경고 처리 이력']
-    ],columns=['위험 징후','통제활동 예시','평가 증빙 예시']),hide_index=True,use_container_width=True)
+ st.subheader('가정한 개선조치 전후 비교')
+ actions=st.multiselect('적용할 개선 가정',['통제 수행 완료','증빙 확보','기록 불일치 수정'],default=['증빙 확보'])
+ before=evaluate(st.session_state.review);after_data=st.session_state.review.copy()
+ if '통제 수행 완료' in actions:after_data['수행여부']=True
+ if '증빙 확보' in actions:after_data['증빙확보']=True
+ if '기록 불일치 수정' in actions:after_data['실제기록']=after_data['기대결과']
+ after=evaluate(after_data);comparison=pd.DataFrame({'시나리오':['개선 전','개선 후(가정)'],'추가 확인 수':[int(before['추가확인'].sum()),int(after['추가확인'].sum())]})
+ st.bar_chart(comparison.set_index('시나리오'));st.dataframe(comparison,hide_index=True)
+ st.warning('개선 후 결과는 가상 데이터를 변경한 산술적 비교이며 실제 운영효과성 개선의 증거가 아닙니다.')
 with t5:
-    st.header('내부회계 점검 결과 요약')
-    result,flags=assess(st.session_state.data,st.session_state.checks)
-    st.write(f"총 **{len(result)}건** 중 **{int((result['탐지항목수']>0).sum())}건**에서 추가 점검할 징후가 확인되었습니다(현재 선택된 규칙 기준).")
-    summary=pd.DataFrame({'점검 항목':flags,'탐지 건수':[int(result[f].sum()) for f in flags]})
-    st.dataframe(summary,hide_index=True,use_container_width=True)
-    st.markdown('**권장 후속 절차:** 탐지 거래 원천증빙 확인 → 실제 승인·처리 이력 확인 → 예외 사유 확인 → 통제 설계 또는 운영상 개선 필요성 판단 → 개선 후 재점검')
-    st.download_button('상세 점검 결과 CSV 다운로드',data=result.to_csv(index=False).encode('utf-8-sig'),file_name='erp_internal_control_assessment.csv',mime='text/csv')
-    st.download_button('점검 요약 CSV 다운로드',data=summary.to_csv(index=False).encode('utf-8-sig'),file_name='erp_control_summary.csv',mime='text/csv')
-    st.caption('본 결과는 시뮬레이션 결과로서 실제 내부회계 평가보고서나 감사의견을 대체하지 않습니다.')
+ st.subheader('사업별 점검 결과 요약')
+ result=evaluate(st.session_state.review);summary=result.groupby('사업',as_index=False).agg(점검수=('점검ID','count'),추가확인수=('추가확인','sum'),수행누락=('수행누락','sum'),증빙누락=('증빙누락','sum'),기록불일치=('기록불일치','sum'))
+ st.dataframe(summary,hide_index=True,use_container_width=True)
+ st.download_button('상세 점검 결과 CSV',result.to_csv(index=False).encode('utf-8-sig'),file_name='business_control_details.csv')
+ st.download_button('사업별 요약 CSV',summary.to_csv(index=False).encode('utf-8-sig'),file_name='business_control_summary.csv')
+ st.subheader('점검 이후 실무에서 필요한 절차')
+ st.write('증빙·승인 이력 확인 → 현업부서와 예외 원인 확인 → 통제 설계 및 운영 평가 → 개선조치 → 재점검·문서화')
+ st.subheader('지원동기 연결')
+ st.write('**왜 현대오토에버:** SI·ITO·차량 SW라는 서로 다른 사업을 함께 영위하므로 사업별 프로세스를 이해하는 내부통제 업무의 폭이 넓다고 판단했습니다.')
+ st.write('**왜 내부회계:** 숫자에 나타난 결과의 분석을 넘어 회계정보가 생성되는 과정에서 위험을 예방·발견하는 통제활동에 관심을 가졌습니다.')
+ st.write('**커리어 계획:** 통제활동 문서화와 운영평가를 익힌 뒤, 데이터 분석과 현업 협력을 통해 사업별 통제를 개선하고 연결 내부회계관리제도까지 전문성을 넓히겠습니다.')
